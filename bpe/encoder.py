@@ -144,7 +144,8 @@ class Encoder:
                 start_idx = end_idx
                 end_idx = min([len(word), start_idx + self.ngram_max])
             elif len(subword) == 1:
-                sw_tokens.append(self.UNK)
+                sw_tokens.append(subword)
+                #sw_tokens.append(self.UNK)
                 start_idx = end_idx
                 end_idx = min([len(word), start_idx + self.ngram_max])
             else:
