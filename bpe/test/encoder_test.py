@@ -53,7 +53,7 @@ def test_single_letter_tokenizing():
     """ Should yield single letters when untrained """
     encoder = Encoder()
     assert encoder.tokenize('single letters') == \
-        [SOW] + [UNK] * len('single') + [EOW, SOW] + [UNK] * len('letters') + [EOW]
+        [SOW] + list('single') + [EOW, SOW] + list('letters') + [EOW]
 
 
 def test_unseen_word_ending():
