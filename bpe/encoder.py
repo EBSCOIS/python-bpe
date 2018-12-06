@@ -90,7 +90,7 @@ class Encoder:
         """ Counts space separated token character pairs:
             [('This is sparta', 4}] -> {'This is': 4, 'is sparta': 4}
         """
-        words = line.split(" ")
+        words = self.word_tokenizer(line)
         for n in range(self.ngram_min, self.ngram_max + 1):
             bp_counts = collections.Counter()  # type: collections.Counter
             sld_wnd = list(toolz.sliding_window(n, range(len(words))))
@@ -207,7 +207,7 @@ class Encoder:
     def subline_tokenize(self, line):
         # type: (Encoder, str) -> List[str]
         """ Tokenizes inside an unknown token using BPE """
-        words = line.split(" ")
+        words = self.word_tokenizer(line)
         end_idx = min([len(words), self.ngram_max])
         sw_tokens = []
         start_idx = 0
