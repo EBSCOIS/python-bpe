@@ -4,10 +4,11 @@ import collections
 import six
 
 try:
-    from typing import Dict, Iterable, Callable, List, Any, Iterator, Union
+    from typing import Dict, Iterable, Callable, List, Any, Iterator, Union, Set
 except ImportError:
     pass
 
+from sklearn.base import TransformerMixin, BaseEstimator
 from nltk.tokenize import wordpunct_tokenize
 from tqdm import tqdm
 import toolz
@@ -20,33 +21,30 @@ DEFAULT_PAD = '__pad'
 
 
 def is_iterable(arg):
-    return (
-        isinstance(arg, collections.Iterable)
-        and not isinstance(arg, six.string_types)
-    )
+    return isinstance(arg, collections.Iterable) and not isinstance(arg, six.string_types)
 
 
-class Encoder:
+class Encoder(BaseEstimator, TransformerMixin):
     """ Encodes white-space separated text using byte-pair encoding.  See https://arxiv.org/abs/1508.07909 for details.
     """
 
-    def __init__(self, vocab_size=8192, pct_bpe=0.2, word_tokenizer=None,
-                 silent=True, ngram_min=2, ngram_max=2, required_tokens=None, strict=False, 
-                 EOW=DEFAULT_EOW, SOW=DEFAULT_SOW, UNK=DEFAULT_UNK, PAD=DEFAULT_PAD):
-        if vocab_size < 1:
-            raise ValueError('vocab size must be greater than 0.')
+    def __init__(self, word_tokenizer=None,
+                 silent=True, required_tokens=None,
+                 strict=False):
 
-        self.EOW = EOW
-        self.SOW = SOW
-        self.eow_len = len(EOW)
-        self.sow_len = len(SOW)
-        self.UNK = UNK
-        self.PAD = PAD
-        self.required_tokens = list(set(required_tokens or []).union({self.UNK, self.PAD}))
-        self.vocab_size = vocab_size
-        self.pct_bpe = pct_bpe
-        self.word_vocab_size = max([int(vocab_size * (1 - pct_bpe)), len(self.required_tokens or [])])
-        self.bpe_vocab_size = vocab_size - self.word_vocab_size
+        self.EOW = DEFAULT_EOW
+        self.SOW = DEFAULT_SOW
+        self.eow_len = len(self.EOW)
+        self.sow_len = len(self.SOW)
+        self.UNK = DEFAULT_UNK
+        self.PAD = DEFAULT_PAD
+        self.required_tokens = list(set(required_tokens or [])
+                                    .union({self.UNK, self.PAD}))
+        self.vocab_size = 8192
+        self.pct_bpe = 0.2
+        self.word_vocab_size = max([int(self.vocab_size * (1 - self.pct_bpe)),
+                                    len(self.required_tokens or [])])
+        self.bpe_vocab_size = self.vocab_size - self.word_vocab_size
         self.word_tokenizer = word_tokenizer if word_tokenizer is not None else wordpunct_tokenize
         self.custom_tokenizer = word_tokenizer is not None
         self.word_vocab = {}  # type: Dict[str, int]
@@ -55,10 +53,39 @@ class Encoder:
         self.inverse_word_vocab = {}  # type: Dict[int, str]
         self.inverse_bpe_vocab = {}  # type: Dict[int, str]
         self._progress_bar = iter if silent else tqdm
-        self.ngram_min = ngram_min
-        self.ngram_max = ngram_max
+        self.ngram_min = 2
+        self.ngram_max = 2
         self.strict = strict
         self.tokenize_on_word_ngrams = False
+        self.tokenize_symbols = True
+
+    def set_params(self, **parameters):
+        for parameter, value in parameters.items():
+            if parameter == "vocab_size":
+                if value < 1:
+                    raise ValueError('vocab size must be greater than 0.')
+            if parameter == "SOW":
+                self.sow_len = len(value)
+            if parameter == "EOW":
+                self.eow_len = len(value)
+            if parameter == "vocab_size":
+                self.word_vocab_size = max([int(value * (1 - self.pct_bpe)),
+                                            len(self.required_tokens or [])])
+                self.bpe_vocab_size = value - self.word_vocab_size
+            if parameter == "pct_bpe":
+                self.word_vocab_size = max([int(self.vocab_size * (1 - value)),
+                                            len(self.required_tokens or [])])
+                self.bpe_vocab_size = self.vocab_size - self.word_vocab_size
+            setattr(self, parameter, value)
+        return self
+
+    def get_params(self, deep=True):
+        # suppose this estimator has parameters "alpha" and "recursive"
+        return {"vocab_size": self.vocab_size, "pct_bpe": self.pct_bpe,
+                "ngram_min": self.ngram_min, "ngram_max": self.ngram_max,
+                "tokenize_symbols": self.tokenize_symbols,
+                "EOW": self.EOW, "SOW": self.SOW,
+                "UNK": self.UNK, "PAD": self.PAD, }
 
     def mute(self):
         """ Turn on silent mode """
@@ -106,9 +133,13 @@ class Encoder:
         return {' '.join(token): count for token, count in token_counts.items()}
 
     def learn_word_vocab(self, sentences):
-        # type: (Encoder, Iterable[str]) -> Dict[str, int]
+        # type: (Encoder, Union[str,Iterable[str]]) -> Dict[str, int]
         """ Build vocab from self.word_vocab_size most common tokens in provided sentences """
-        word_counts = collections.Counter(word for word in toolz.concat(map(self.word_tokenizer, sentences)))
+        if is_iterable(sentences):
+            word_counts = collections.Counter(word for word in toolz.concat(map(self.word_tokenizer, sentences)))
+        else:
+            lst = self.word_tokenizer(sentences)
+            word_counts = collections.Counter(word for word in lst)
         for token in set(self.required_tokens or []):
             word_counts[token] = int(2**63)
         sorted_word_counts = sorted(word_counts.items(), key=lambda p: -p[1])
@@ -154,23 +185,27 @@ class Encoder:
             """ Learn vocab from text. """
             _text = [l.lower().strip() for l in text]
 
-            self.bpe_vocab_words = self.learn_bpe_vocab_words(_text)
-            self.inverse_bpe_vocab = {idx: token for token, idx in self.bpe_vocab.items()}
+            self.word_vocab = self.learn_bpe_vocab_words(_text)
+            self.inverse_word_vocab = {idx: token for token, idx in self.word_vocab.items()}
+
+            if self.tokenize_symbols:
+                remaining_words = self.find_remaining_words(self.word_vocab, _text)
+                self.bpe_vocab = self.learn_bpe_vocab(remaining_words)
+                self.inverse_bpe_vocab = {idx: token for token, idx in self.bpe_vocab.items()}
         else:
-            pass
             self.tokenize_on_word_ngrams = False
             """ Learn vocab from text. """
             _text = text.strip()
 
             # First, learn word vocab
             self.word_vocab = self.learn_word_vocab(_text)
-
-            remaining_words = [word for word in toolz.concat(map(self.word_tokenizer, _text))
-                               if word not in self.word_vocab]
-            self.bpe_vocab = self.learn_bpe_vocab(remaining_words)
-
             self.inverse_word_vocab = {idx: token for token, idx in self.word_vocab.items()}
-            self.inverse_bpe_vocab = {idx: token for token, idx in self.bpe_vocab.items()}
+
+            if self.tokenize_symbols:
+                remaining_words = [word for word in toolz.concat(map(self.word_tokenizer, _text))
+                                   if word not in self.word_vocab]
+                self.bpe_vocab = self.learn_bpe_vocab(remaining_words)
+                self.inverse_bpe_vocab = {idx: token for token, idx in self.bpe_vocab.items()}
 
     @staticmethod
     def trim_vocab(n, vocab):
@@ -215,7 +250,7 @@ class Encoder:
         while start_idx < len(words):
             subword_list = words[start_idx:end_idx]
             subword = " ".join(subword_list)
-            if subword in self.bpe_vocab_words:
+            if subword in self.word_vocab:
                 sw_tokens.append(subword)
                 start_idx = end_idx
                 end_idx = min([len(words), start_idx + self.ngram_max])
@@ -239,74 +274,100 @@ class Encoder:
                 if word_token in self.word_vocab:
                     tokens.append(word_token)
                 else:
-                    tokens.extend(self.subword_tokenize(word_token))
+                    if self.tokenize_symbols:
+                        tokens.extend(self.subword_tokenize(word_token))
+                    else:
+                        tokens.append(word_token)
 
             return tokens
         else:
-            return self.subline_tokenize(sentence)
-
-    def transform(self, sentences, reverse=False, fixed_length=None):
-        # type: (Encoder, Iterable[str], bool, int) -> Iterable[List[int]]
-        """ Turns space separated tokens into vocab idxs """
-        direction = -1 if reverse else 1
-        for sentence in self._progress_bar(sentences):
-            encoded = []
-            tokens = list(self.tokenize(sentence.lower().strip()))
+            result = []
+            tokens = self.subline_tokenize(sentence)
             for token in tokens:
                 if token in self.word_vocab:
-                    encoded.append(self.word_vocab[token])
-                elif token in self.bpe_vocab:
-                    encoded.append(self.bpe_vocab[token])
+                    result.append(token)
                 else:
-                    encoded.append(self.word_vocab[self.UNK])
+                    if self.tokenize_symbols:
+                        result += self.subword_tokenize(token)
+                    else:
+                        result.append(token)
 
-            if fixed_length is not None:
-                encoded = encoded[:fixed_length]
-                while len(encoded) < fixed_length:
-                    encoded.append(self.word_vocab[self.PAD])
+            return result
 
-            yield encoded[::direction]
+    def transform(self, sentences, reverse=False, fixed_length=None):
+        # type: (Encoder, Union[str, Iterable[str]], bool, int) -> Iterable[List[int]]
+        """ Turns space separated tokens into vocab idxs """
+        direction = -1 if reverse else 1
+        if is_iterable(sentences):
+            for sentence in self._progress_bar(sentences):
+                yield self._transform_sentence(sentence, fixed_length, direction)
+        else:
+            yield self._transform_sentence(sentences, fixed_length, direction)
+
+    def _transform_sentence(self, sentence, fixed_length=None, direction=1):
+        encoded = []
+        tokens = list(self.tokenize(sentence.lower().strip()))
+        for token in tokens:
+            if token in self.word_vocab:
+                encoded.append(self.word_vocab[token])
+            elif token in self.bpe_vocab:
+                encoded.append(self.bpe_vocab[token])
+            else:
+                encoded.append(self.word_vocab[self.UNK])
+
+        if fixed_length is not None:
+            encoded = encoded[:fixed_length]
+            while len(encoded) < fixed_length:
+                encoded.append(self.word_vocab[self.PAD])
+
+        return encoded[::direction]
 
     def inverse_transform(self, rows):
-        # type: (Encoder, Iterable[List[int]]) -> Iterator[str]
+        # type: (Encoder, Union[List[int], Iterable[List[int]]]) -> Iterator[str]
         """ Turns token indexes back into space-joined text. """
-        for row in rows:
-            words = []
+        if is_iterable(rows[0]):
+            for row in rows:
+                yield self._inverse_transform_sentense(row)
+        else:
+            yield self._inverse_transform_sentense(rows)
 
-            rebuilding_word = False
-            current_word = ''
-            for idx in row:
-                if self.inverse_bpe_vocab.get(idx) == self.SOW:
-                    if rebuilding_word and self.strict:
-                        raise ValueError('Encountered second SOW token before EOW.')
-                    rebuilding_word = True
+    def _inverse_transform_sentense(self, row):
+        words = []
 
-                elif self.inverse_bpe_vocab.get(idx) == self.EOW:
-                    if not rebuilding_word and self.strict:
-                        raise ValueError('Encountered EOW without matching SOW.')
-                    rebuilding_word = False
-                    words.append(current_word)
-                    current_word = ''
+        rebuilding_word = False
+        current_word = ''
+        for idx in row:
+            if self.inverse_bpe_vocab.get(idx) == self.SOW:
+                if rebuilding_word and self.strict:
+                    raise ValueError('Encountered second SOW token before EOW.')
+                rebuilding_word = True
 
-                elif rebuilding_word and (idx in self.inverse_bpe_vocab):
-                    current_word += self.inverse_bpe_vocab[idx]
+            elif self.inverse_bpe_vocab.get(idx) == self.EOW:
+                if not rebuilding_word and self.strict:
+                    raise ValueError('Encountered EOW without matching SOW.')
+                rebuilding_word = False
+                words.append(current_word)
+                current_word = ''
 
-                elif rebuilding_word and (idx in self.inverse_word_vocab):
-                    current_word += self.inverse_word_vocab[idx]
+            elif rebuilding_word and (idx in self.inverse_bpe_vocab):
+                current_word += self.inverse_bpe_vocab[idx]
 
-                elif idx in self.inverse_word_vocab:
-                    words.append(self.inverse_word_vocab[idx])
+            elif rebuilding_word and (idx in self.inverse_word_vocab):
+                current_word += self.inverse_word_vocab[idx]
 
-                elif idx in self.inverse_bpe_vocab:
-                    if self.strict:
-                        raise ValueError("Found BPE index {} when not rebuilding word!".format(idx))
-                    else:
-                        words.append(self.inverse_bpe_vocab[idx])
+            elif idx in self.inverse_word_vocab:
+                words.append(self.inverse_word_vocab[idx])
 
+            elif idx in self.inverse_bpe_vocab:
+                if self.strict:
+                    raise ValueError("Found BPE index {} when not rebuilding word!".format(idx))
                 else:
-                    raise ValueError("Got index {} that was not in word or BPE vocabs!".format(idx))
+                    words.append(self.inverse_bpe_vocab[idx])
 
-            yield ' '.join(w for w in words if w != '')
+            else:
+                raise ValueError("Got index {} that was not in word or BPE vocabs!".format(idx))
+
+        return ' '.join(w for w in words if w != '')
 
     def vocabs_to_dict(self, dont_warn=False):
         # type: (Encoder, bool) -> Dict[str, Dict[str, int]]
@@ -362,3 +423,13 @@ class Encoder:
         with open(in_path) as infile:
             obj = json.load(infile)
         return cls.from_dict(obj)
+
+    def find_remaining_words(self, word_vocab, _text):
+        # type: (Encoder, Dict[str, int], List[str]) -> Set[str]
+        tokens = set()
+        for line in _text:
+            word_tokens = self.subline_tokenize(line)
+            for token in word_tokens:
+                if token not in word_vocab:
+                    tokens.add(token)
+        return tokens
