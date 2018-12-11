@@ -4,3 +4,4 @@ pytest
 hypothesis
 toolz
 mypy
+scikit-learn

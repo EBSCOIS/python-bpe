@@ -104,37 +104,6 @@ def test_tokenize():
                                                      'ho', 'w', EOW]
 
 
-def test_basic_transform():
-    encoder = Encoder(pct_bpe=1)
-    encoder.fit(test_corpus)
-    assert len(list(encoder.transform(['this']))[0]) == 4
-
-
-def test_inverse_transform():
-    encoder = Encoder(pct_bpe=1)
-    encoder.fit(test_corpus)
-
-    transform = lambda text: next(encoder.inverse_transform(encoder.transform([text])))
-
-    assert transform('this is how we do it') == 'this is how we do it'
-
-    assert transform('looking at the promotional stuff, it looks good.') == \
-        'looking at the promotional stuff {} it looks good .'.format(UNK)
-
-    assert transform('almost nothing should be recognized! let\'s see...') == \
-        'almost nothing should be recognized {unk} let {unk} s see ...'.format(unk=UNK)
-
-    assert transform("Vizzini: He didn't fall? INCONCEIVABLE!") == \
-        "vizzini {unk} he didn {unk} t fall {unk} inconceivable {unk}".format(unk=UNK)
-
-
-@given(st.lists(st.text()))
-def test_encoder_learning_from_random_sentences(sentences):
-    encoder = Encoder()
-    encoder.fit(test_corpus)
-    encoded = encoder.transform(sentences)
-
-
 def test_fixed_length_encoding():
     encoder = Encoder(pct_bpe=1, required_tokens=[PAD])
     encoder.fit(test_corpus)

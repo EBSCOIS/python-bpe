@@ -9,12 +9,17 @@ def main(corpus_path):
     """ Loads corpus, learns word and BPE vocab, and writes to stdout.  Assumes corpus is
         line-separated text.
     """
-    with open(corpus_path) as infile:
+    with open(corpus_path, encoding="utf8") as infile:
         lines = list(map(str.strip, infile))
 
-    encoder = Encoder(silent=True)
-    encoder.fit(lines)
-    print(json.dumps(encoder.vocabs_to_dict()))
+    encoder = Encoder()
+    encoder.set_params(pct_bpe=0.3, tokenize_symbols=False)
+    encoder.fit("There is a leader and he is winner")
+    text = "There is a leader and he is winner"
+    print(encoder.tokenize(text))
+    tr = list(encoder.transform(text))
+    print(tr)
+    print(list(encoder.inverse_transform(tr[0])))
 
 
 if __name__ == '__main__':
