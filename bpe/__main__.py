@@ -13,7 +13,7 @@ def main(corpus_path):
         lines = list(map(str.strip, infile))
 
     encoder = Encoder()
-    encoder.set_params(pct_bpe=0.3)
+    encoder.set_params(pct_bpe=0.3, tokenize_symbols=False)
     encoder.fit("There is a leader and he is winner")
     text = "There is a leader and he is winner"
     print(encoder.tokenize(text))

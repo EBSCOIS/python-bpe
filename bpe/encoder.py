@@ -183,7 +183,7 @@ class Encoder(BaseEstimator, TransformerMixin):
         if is_iterable(text):
             self.tokenize_on_word_ngrams = True
             """ Learn vocab from text. """
-            _text = [l.lower().strip() for l in text]
+            _text = [l.strip() for l in text]
 
             self.word_vocab = self.learn_bpe_vocab_words(_text)
             self.inverse_word_vocab = {idx: token for token, idx in self.word_vocab.items()}
@@ -267,7 +267,7 @@ class Encoder(BaseEstimator, TransformerMixin):
         # type: (Encoder, str) -> List[str]
         if not self.tokenize_on_word_ngrams:
             """ Split a sentence into word and subword tokens """
-            word_tokens = self.word_tokenizer(sentence.lower().strip())
+            word_tokens = self.word_tokenizer(sentence.strip())
 
             tokens = []
             for word_token in word_tokens:
@@ -306,7 +306,7 @@ class Encoder(BaseEstimator, TransformerMixin):
 
     def _transform_sentence(self, sentence, fixed_length=None, direction=1):
         encoded = []
-        tokens = list(self.tokenize(sentence.lower().strip()))
+        tokens = list(self.tokenize(sentence.strip()))
         for token in tokens:
             if token in self.word_vocab:
                 encoded.append(self.word_vocab[token])
