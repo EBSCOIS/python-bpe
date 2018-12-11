@@ -263,7 +263,7 @@ class Encoder(BaseEstimator, TransformerMixin):
 
         return sw_tokens
 
-    def tokenize(self, sentence):
+    def _tokenize(self, sentence):
         # type: (Encoder, str) -> List[str]
         if not self.tokenize_on_word_ngrams:
             """ Split a sentence into word and subword tokens """
@@ -294,80 +294,8 @@ class Encoder(BaseEstimator, TransformerMixin):
 
             return result
 
-    def transform(self, sentences, reverse=False, fixed_length=None):
-        # type: (Encoder, Union[str, Iterable[str]], bool, int) -> Iterable[List[int]]
-        """ Turns space separated tokens into vocab idxs """
-        direction = -1 if reverse else 1
-        if is_iterable(sentences):
-            for sentence in self._progress_bar(sentences):
-                yield self._transform_sentence(sentence, fixed_length, direction)
-        else:
-            yield self._transform_sentence(sentences, fixed_length, direction)
-
-    def _transform_sentence(self, sentence, fixed_length=None, direction=1):
-        encoded = []
-        tokens = list(self.tokenize(sentence.strip()))
-        for token in tokens:
-            if token in self.word_vocab:
-                encoded.append(self.word_vocab[token])
-            elif token in self.bpe_vocab:
-                encoded.append(self.bpe_vocab[token])
-            else:
-                encoded.append(self.word_vocab[self.UNK])
-
-        if fixed_length is not None:
-            encoded = encoded[:fixed_length]
-            while len(encoded) < fixed_length:
-                encoded.append(self.word_vocab[self.PAD])
-
-        return encoded[::direction]
-
-    def inverse_transform(self, rows):
-        # type: (Encoder, Union[List[int], Iterable[List[int]]]) -> Iterator[str]
-        """ Turns token indexes back into space-joined text. """
-        if is_iterable(rows[0]):
-            for row in rows:
-                yield self._inverse_transform_sentense(row)
-        else:
-            yield self._inverse_transform_sentense(rows)
-
-    def _inverse_transform_sentense(self, row):
-        words = []
-
-        rebuilding_word = False
-        current_word = ''
-        for idx in row:
-            if self.inverse_bpe_vocab.get(idx) == self.SOW:
-                if rebuilding_word and self.strict:
-                    raise ValueError('Encountered second SOW token before EOW.')
-                rebuilding_word = True
-
-            elif self.inverse_bpe_vocab.get(idx) == self.EOW:
-                if not rebuilding_word and self.strict:
-                    raise ValueError('Encountered EOW without matching SOW.')
-                rebuilding_word = False
-                words.append(current_word)
-                current_word = ''
-
-            elif rebuilding_word and (idx in self.inverse_bpe_vocab):
-                current_word += self.inverse_bpe_vocab[idx]
-
-            elif rebuilding_word and (idx in self.inverse_word_vocab):
-                current_word += self.inverse_word_vocab[idx]
-
-            elif idx in self.inverse_word_vocab:
-                words.append(self.inverse_word_vocab[idx])
-
-            elif idx in self.inverse_bpe_vocab:
-                if self.strict:
-                    raise ValueError("Found BPE index {} when not rebuilding word!".format(idx))
-                else:
-                    words.append(self.inverse_bpe_vocab[idx])
-
-            else:
-                raise ValueError("Got index {} that was not in word or BPE vocabs!".format(idx))
-
-        return ' '.join(w for w in words if w != '')
+    def transform(self, sentences):
+       return self._tokenize(sentences)
 
     def vocabs_to_dict(self, dont_warn=False):
         # type: (Encoder, bool) -> Dict[str, Dict[str, int]]
