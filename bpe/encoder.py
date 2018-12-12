@@ -55,6 +55,8 @@ class Encoder(BaseEstimator, TransformerMixin):
         self._progress_bar = iter if silent else tqdm
         self.ngram_min = 2
         self.ngram_max = 2
+        self.word_ngram_min = 2
+        self.word_ngram_max = 2
         self.strict = strict
         self.tokenize_on_word_ngrams = False
         self.tokenize_symbols = True
@@ -83,6 +85,7 @@ class Encoder(BaseEstimator, TransformerMixin):
         # suppose this estimator has parameters "alpha" and "recursive"
         return {"vocab_size": self.vocab_size, "pct_bpe": self.pct_bpe,
                 "ngram_min": self.ngram_min, "ngram_max": self.ngram_max,
+                "word_ngram_min": self.word_ngram_min, "word_ngram_max": self.word_ngram_max,
                 "tokenize_symbols": self.tokenize_symbols,
                 "EOW": self.EOW, "SOW": self.SOW,
                 "UNK": self.UNK, "PAD": self.PAD, }
@@ -118,7 +121,7 @@ class Encoder(BaseEstimator, TransformerMixin):
             [('This is sparta', 4}] -> {'This is': 4, 'is sparta': 4}
         """
         words = self.word_tokenizer(line)
-        for n in range(self.ngram_min, self.ngram_max + 1):
+        for n in range(self.word_ngram_min, self.word_ngram_max + 1):
             bp_counts = collections.Counter()  # type: collections.Counter
             sld_wnd = list(toolz.sliding_window(n, range(len(words))))
             sln_wnd_txt = [words[pair[0]: pair[len(pair) - 1] + 1] for pair in sld_wnd]
@@ -243,7 +246,7 @@ class Encoder(BaseEstimator, TransformerMixin):
         # type: (Encoder, str) -> List[str]
         """ Tokenizes inside an unknown token using BPE """
         words = self.word_tokenizer(line)
-        end_idx = min([len(words), self.ngram_max])
+        end_idx = min([len(words), self.word_ngram_max])
         sw_tokens = []
         start_idx = 0
 
@@ -253,11 +256,11 @@ class Encoder(BaseEstimator, TransformerMixin):
             if subword in self.word_vocab:
                 sw_tokens.append(subword)
                 start_idx = end_idx
-                end_idx = min([len(words), start_idx + self.ngram_max])
+                end_idx = min([len(words), start_idx + self.word_ngram_max])
             elif len(subword_list) == 1:
                 sw_tokens.append(subword)
                 start_idx = end_idx
-                end_idx = min([len(words), start_idx + self.ngram_max])
+                end_idx = min([len(words), start_idx + self.word_ngram_max])
             else:
                 end_idx -= 1
 
@@ -314,6 +317,8 @@ class Encoder(BaseEstimator, TransformerMixin):
                 'silent': self._progress_bar is iter,
                 'ngram_min': self.ngram_min,
                 'ngram_max': self.ngram_max,
+                'word_ngram_min': self.word_ngram_min,
+                'word_ngram_max': self.word_ngram_max,
                 'required_tokens': self.required_tokens,
                 'strict': self.strict,
                 'EOW': self.EOW,

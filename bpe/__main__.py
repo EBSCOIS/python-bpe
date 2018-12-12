@@ -16,10 +16,7 @@ def main(corpus_path):
     encoder.set_params(pct_bpe=0.3, tokenize_symbols=False)
     encoder.fit("There is a leader and he is winner")
     text = "There is a leader and he is winner"
-    print(encoder.tokenize(text))
-    tr = list(encoder.transform(text))
-    print(tr)
-    print(list(encoder.inverse_transform(tr[0])))
+    print(encoder.transform(text))
 
 
 if __name__ == '__main__':
