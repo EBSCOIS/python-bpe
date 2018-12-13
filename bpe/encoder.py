@@ -67,6 +67,10 @@ class Encoder(BaseEstimator, TransformerMixin):
                 self.sow_len = len(value)
             if parameter == "EOW":
                 self.eow_len = len(value)
+            if parameter == "tokenize_symbols":
+                if not value:
+                    self.word_vocab_size = self.vocab_size
+                    self.bpe_vocab_size = 0
             if parameter == "vocab_size":
                 self.word_vocab_size = max([int(value * (1 - self.pct_bpe)),
                                             len(self.required_tokens or [])])
