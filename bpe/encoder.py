@@ -16,8 +16,6 @@ import json
 
 DEFAULT_EOW = '__eow'
 DEFAULT_SOW = '__sow'
-DEFAULT_UNK = '__unk'
-DEFAULT_PAD = '__pad'
 
 
 def is_iterable(arg):
@@ -36,10 +34,7 @@ class Encoder(BaseEstimator, TransformerMixin):
         self.SOW = DEFAULT_SOW
         self.eow_len = len(self.EOW)
         self.sow_len = len(self.SOW)
-        self.UNK = DEFAULT_UNK
-        self.PAD = DEFAULT_PAD
-        self.required_tokens = list(set(required_tokens or [])
-                                    .union({self.UNK, self.PAD}))
+        self.required_tokens = list(set(required_tokens or []))
         self.vocab_size = 8192
         self.pct_bpe = 0.2
         self.word_vocab_size = max([int(self.vocab_size * (1 - self.pct_bpe)),
@@ -63,6 +58,8 @@ class Encoder(BaseEstimator, TransformerMixin):
 
     def set_params(self, **parameters):
         for parameter, value in parameters.items():
+            if not hasattr(self, parameter):
+                raise ValueError("Encoder does not have parameter '{}'".format(parameter))
             if parameter == "vocab_size":
                 if value < 1:
                     raise ValueError('vocab size must be greater than 0.')
@@ -87,8 +84,7 @@ class Encoder(BaseEstimator, TransformerMixin):
                 "ngram_min": self.ngram_min, "ngram_max": self.ngram_max,
                 "word_ngram_min": self.word_ngram_min, "word_ngram_max": self.word_ngram_max,
                 "tokenize_symbols": self.tokenize_symbols,
-                "EOW": self.EOW, "SOW": self.SOW,
-                "UNK": self.UNK, "PAD": self.PAD, }
+                "EOW": self.EOW, "SOW": self.SOW, }
 
     def mute(self):
         """ Turn on silent mode """
@@ -105,8 +101,6 @@ class Encoder(BaseEstimator, TransformerMixin):
         """
         for token, count in self._progress_bar(self.count_tokens(words).items()):
             bp_counts = collections.Counter()  # type: collections.Counter
-            for ngram in token.split(' '):
-                bp_counts[ngram] += count
             for ngram_size in range(self.ngram_min, min([self.ngram_max, len(token)]) + 1):
                 ngrams = [''.join(ngram) for ngram in toolz.sliding_window(ngram_size, token.split(' '))]
 
@@ -152,8 +146,6 @@ class Encoder(BaseEstimator, TransformerMixin):
         # type: (Encoder, Iterable[str]) -> Dict[str, int]
         """ Learns a vocab of byte pair encodings """
         vocab = collections.Counter()  # type: collections.Counter
-        for token in {self.SOW, self.EOW}:
-            vocab[token] = int(2**63)
         for idx, byte_pair_count in enumerate(self.byte_pair_counts(words)):
             for byte_pair, count in byte_pair_count.items():
                 vocab[byte_pair] += count
@@ -168,8 +160,6 @@ class Encoder(BaseEstimator, TransformerMixin):
         # type: (Encoder, Iterable[str]) -> Dict[str, int]
         """ Learns a vocab of byte pair encodings """
         vocab = collections.Counter()  # type: collections.Counter
-        for token in {self.SOW, self.EOW}:
-            vocab[token] = int(2**63)
         for line in lines:
             for idx, byte_pair_count in enumerate(self.word_pair_counts(line)):
                 for byte_pair, count in byte_pair_count.items():
@@ -178,8 +168,8 @@ class Encoder(BaseEstimator, TransformerMixin):
                 if (idx + 1) % 10000 == 0:
                     self.trim_vocab(10 * self.bpe_vocab_size, vocab)
 
-        sorted_bpe_counts = sorted(vocab.items(), key=lambda p: -p[1])[:self.bpe_vocab_size]
-        return {bp: idx + self.word_vocab_size for idx, (bp, count) in enumerate(sorted_bpe_counts)}
+        sorted_bpe_counts = sorted(vocab.items(), key=lambda p: -p[1])[:self.word_vocab_size]
+        return {bp: idx for idx, (bp, count) in enumerate(sorted_bpe_counts)}
 
     def fit(self, text):
         # type: (Encoder, Union[Iterable[str], str]) -> None
@@ -205,7 +195,7 @@ class Encoder(BaseEstimator, TransformerMixin):
             self.inverse_word_vocab = {idx: token for token, idx in self.word_vocab.items()}
 
             if self.tokenize_symbols:
-                remaining_words = [word for word in toolz.concat(map(self.word_tokenizer, _text))
+                remaining_words = [word for word in self.word_tokenizer(_text)
                                    if word not in self.word_vocab]
                 self.bpe_vocab = self.learn_bpe_vocab(remaining_words)
                 self.inverse_bpe_vocab = {idx: token for token, idx in self.bpe_vocab.items()}
@@ -298,7 +288,7 @@ class Encoder(BaseEstimator, TransformerMixin):
             return result
 
     def transform(self, sentences):
-       return self._tokenize(sentences)
+        return self._tokenize(sentences)
 
     def vocabs_to_dict(self, dont_warn=False):
         # type: (Encoder, bool) -> Dict[str, Dict[str, int]]
@@ -323,8 +313,6 @@ class Encoder(BaseEstimator, TransformerMixin):
                 'strict': self.strict,
                 'EOW': self.EOW,
                 'SOW': self.SOW,
-                'UNK': self.UNK,
-                'PAD': self.PAD,
             }
         }
 

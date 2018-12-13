@@ -9,14 +9,22 @@ def main(corpus_path):
     """ Loads corpus, learns word and BPE vocab, and writes to stdout.  Assumes corpus is
         line-separated text.
     """
-    with open(corpus_path, encoding="utf8") as infile:
-        lines = list(map(str.strip, infile))
+    train_text = [
+        "Hello world from earth",
+        "Hello George who has two ears",
+        "Hello Georgia which has a big capital city",
+        "A litte George said hello",
+    ]
+
+    train_text_single = "Hello world from earth. Hello George who has two ears. Hello Georgia which has a big capital city. A litte George said hello. Linking ideas in domain is a good idea"
 
     encoder = Encoder()
-    encoder.set_params(pct_bpe=0.3, tokenize_symbols=False)
-    encoder.fit("There is a leader and he is winner")
-    text = "There is a leader and he is winner"
+    encoder.set_params(tokenize_symbols=True, vocab_size=30, pct_bpe=1, ngram_min=2, ngram_max=5)
+    encoder.fit(train_text_single)
+    text = "Say Hello to guys from Georgia"
     print(encoder.transform(text))
+    print(encoder.bpe_vocab)
+    print(encoder.word_vocab)
 
 
 if __name__ == '__main__':
